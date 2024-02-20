@@ -3,7 +3,7 @@ import { isEqual } from 'underscore';
 import { resolve, dirname } from 'path';
 import { load as safeLoad } from 'js-yaml';
 
-import { Change, VersionChange } from 'src/interfaces';
+import { Change, Cwl, GithubPost4PR, VersionChange } from 'src/interfaces';
 import Log from './logger';
 // import { ToolService } from '../mongoConnection';
 
@@ -124,6 +124,53 @@ export const saveChange = (
     };
 };
 
+    /**
+     * Remove the metadata from the cwl before packing
+     * @param dataObj CWL
+     * @param excludeKeysGlobal Wich keys to exclude
+     */
+    
+export const _removeMetadata = (dataObj, excludeKeysGlobal = ['$namespaces', '$schemas', 'doc']) => {
+        const excludeKeysSchemas = [];
+        if (
+            dataObj['$namespaces'] &&
+            !Array.isArray(dataObj['$namespaces']) &&
+            Object.keys(dataObj['$namespaces']).length > 0
+        ) {
+            Object.keys(dataObj['$namespaces']).forEach((namespace) => {
+                if (!excludeKeysSchemas.includes(namespace + ':'))
+                    excludeKeysSchemas.push(namespace + ':');
+            });
+        }
+
+        const removeMetadataR = (dataObj, excludeKeysG, excludeKeysL) => {
+            if (typeof dataObj !== 'object' || !dataObj) {
+                return;
+            }
+
+            if (Array.isArray(dataObj)) {
+                dataObj.forEach((item) => removeMetadataR(item, excludeKeysG, excludeKeysL));
+            } else {
+                Object.keys(dataObj).forEach((key) => {
+                    excludeKeysL.forEach((itemPrefixToExclude) => {
+                        if (key.startsWith(itemPrefixToExclude)) {
+                            delete dataObj[key];
+                        }
+                    });
+                    excludeKeysG.forEach((itemPrefixToExclude) => {
+                        if (key === itemPrefixToExclude) {
+                            delete dataObj[key];
+                        }
+                    });
+                    if (dataObj[key]) {
+                        removeMetadataR(dataObj[key], excludeKeysG, excludeKeysL);
+                    }
+                });
+            }
+        };
+        removeMetadataR(dataObj, excludeKeysGlobal, excludeKeysSchemas);
+    }
+
 /**
  * Make sure a potential relative path includes a full path
  * @param path relative path
@@ -194,22 +241,23 @@ export const expandEmbedded = async (
                 if (!!currObj[key]['$import']) {
                     _path = currObj[key]['$import'];
                 } else if (key === 'run') {
-                    _path = currObj[key];
+                    _path = currObj[key].split('/').slice(-2).join('/');
                 }
-
+                
                 // if (false) {
                 if (_path.includes('tools')) {
                     const newPath = resolve('/', currPath, dirname(_path));
                     const toolPath = getFullPath(_path, html_url);
-                    // const tool = await toolService.findLatestByURL(toolPath);
+                    //getting the tool from github
+                    const {json,text,sha} = await getWorkflowJSON(octoKit,owner,repo,_path);
                     // // const tool = {};
-                    // if (!tool) {
-                    //     Log.info(`No Tool found in Collection for ${toolPath}`);
-                    // } else {
-                    //     const loaded = safeLoad(tool.source.source);
-                    //     updated[key] = await helper(loaded, newPath);
-                    //     continue;
-                    // }
+                    if (!json) {
+                        Log.info(`No Tool found in Collection for ${toolPath}`);
+                    } else {
+                        
+                        updated[key] = await helper(json, newPath);
+                        continue;
+                    }
                 }
                 let absPath: string;
                 try {

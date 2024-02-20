@@ -1,7 +1,7 @@
-import { Body, Controller, Headers, Post, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Header, Headers, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Response, Request } from 'express';
 import { Octokit } from '@octokit/core';
-
+import { GithubPost4PR } from 'src/interfaces';
 import Log from '../lib/logger';
 import { HookManagerService } from './hook-manager.service';
 
@@ -10,11 +10,14 @@ export class HookManagerController {
     constructor(
         private readonly _hookService: HookManagerService,
     ) {}
-
+    
     @Post('hooks')
+    // @Header('Content-Type','application/x-www-url-form-encoded')
     async githubHooks(@Body() webHookBody, @Headers() headers, @Res() res: Response) {
+       
+        // console.log(webHookBody.action)
         const event = headers['x-github-event'];
-        Log.info('webhook body keys: ', Object.keys(webHookBody));
+        // Log.info('webhook body keys: ', webHookBody);
         if(event !== "pull_request"){
             if(event !== "push"){
                 // if not pull or push, send "request not implemented" status code
@@ -38,7 +41,8 @@ export class HookManagerController {
             // }
         }
         else{
-            Log.info('pull_request body keys: ', Object.keys(webHookBody.pull_request));
+            
+            // Log.info('pull_request body keys: ', Object.keys(webHookBody.pull_request));
             // do same logic for push but only on pr_merges
             let response: any = {};
 
@@ -46,6 +50,7 @@ export class HookManagerController {
 
             switch(webHookBody.action){
                 case "opened":
+                    console.log('opended');
                     res.sendStatus(200);
                     Log.info('PR opened');
                     break;
@@ -56,6 +61,7 @@ export class HookManagerController {
                 case "closed":
                     if(webHookBody.pull_request.merged){
                         // send status saying we got hook
+                        console.log('test');
                         res.sendStatus(202);
                         Log.info('PR merged. begin processing webhook');
                         response = await this._hookService.pr_merged(webHookBody);
@@ -68,7 +74,7 @@ export class HookManagerController {
                 default:
                     // should we send error code instead of success code? commenting on a PR would be an example action "not accounted for"
                     res.sendStatus(200);
-                    Log.info('action not accounted for. action: ', webHookBody.action)
+                    // Log.info('action not accounted for. action: ', webHookBody.action)
                     return;
             }
 

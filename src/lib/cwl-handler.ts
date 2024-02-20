@@ -2,7 +2,8 @@ import { Octokit } from '@octokit/core';
 
 import Log from './logger';
 import { checkParameters, getWorkflowJSON } from './utils';
-import { GitInfo, VersionChange } from '../interfaces';
+import { GitInfo, VersionChange, Cwl } from '../interfaces';
+
 
 /**
  * Check if a workflow is updated, minor major or new
@@ -11,6 +12,7 @@ import { GitInfo, VersionChange } from '../interfaces';
  * @param octoKit instance of octokit
  * @returns major, minor, new
  */
+
 export const checkWorkflowVersion = async (
     gitInfo: GitInfo,
     toolsUpdated: string[],

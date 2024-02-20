@@ -20,3 +20,25 @@ export interface AttachedLab {
     webhookId?: number;
     labId: string;
 }
+export interface Cwl{
+    description:{
+        author: string,
+        description: string,
+        label: string,
+        longName: string,
+        message: string,
+        url: string
+    },
+    inputs: any,
+    metadata: any,
+    outputs: any,
+    servicetags: any,
+    
+    git: {
+        path:string,
+        remote: string,
+        sha: string
+    },
+    packed: any,
+    upstreams: any
+}

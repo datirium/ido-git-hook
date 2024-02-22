@@ -28,6 +28,7 @@ export class HookManagerService {
     async pr_merged(body: GithubPost4PR) {
         const response: any = {};
         const changes: { [key: string]: Change } = {};
+        const toolCache: {[key:string]: JSON } = {}
         const url = body.repository.html_url;
         const PR_NUM = body.number ? body.number : body.pull_request.number
         // console.log(`PR${PR_NUM} being merged into: ${url}`);
@@ -83,7 +84,7 @@ export class HookManagerService {
             newJSON = json;
             
             
-            let cwl = await this.cwlService.CreateCwlObject(newJSON, file, body, octoKit, repo_url, repo_owner);
+            let cwl = await this.cwlService.CreateCwlObject(newJSON, file, body, octoKit, repo_url, repo_owner,toolCache);
             cwls.push(cwl);
         }
         this.fireService.setCollection(cwls);

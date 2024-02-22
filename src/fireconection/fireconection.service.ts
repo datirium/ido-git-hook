@@ -19,9 +19,15 @@ export class FireconectionService {
         const batch = this.db.batch()
         for (const cwl of cwls) {
             //getting all documents with the same url as the new workflows
-            let collectionRef = await this.db.collection('CWL_STAGED').where('description.url', '==', cwl.description.url).get();
+            let collectionRef;
+            if(cwl?.description?.url){
+            collectionRef = await this.db.collection('CWL_STAGED').where('description.url', '==', cwl.description.url).get();
+            }
+            else{
+                console.log('doesnt habe desc')
+            }
             //checking if the document already exists: if they doesn't create new document if they does update the same document
-            if (collectionRef.empty) {
+            if (!!collectionRef) {
                 let docRef = this.db.collection('CWL_STAGED').doc();
                 //create new document
                 batch.set(docRef, {

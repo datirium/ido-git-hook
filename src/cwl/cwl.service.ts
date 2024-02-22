@@ -1,6 +1,6 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
-
+import { metadata } from 'src/interfaces/metadata.interface';
 import { Octokit } from '@octokit/core';
 
 import * as zlib from 'zlib';
@@ -30,9 +30,10 @@ export class CwlService {
      * @param owner owner of repository in github
      * @returns Cwl object
      */
-    public async CreateCwlObject(newJSON: any, path: any, webHookBody: GithubPost4PR, octoKit: Octokit, repo: string, owner: string): Promise<Cwl> {
+    public async CreateCwlObject(newJSON: any, path: any, webHookBody: GithubPost4PR, octoKit: Octokit, repo: string, owner: string, toolcache: any): Promise<Cwl> {
         const creator = !!newJSON['s:creator'] ? newJSON['s:creator'] : [];
         const fullUrl = getFullPath(path, webHookBody.repository.html_url);
+        
         const pathRoot = dirname(path);
         //just for testing
         const tempURL = fullUrl.replace('galio12', 'datirium');
@@ -50,7 +51,7 @@ export class CwlService {
             serviceTags = [serviceTags];
         }
         if (!serviceTags.length) {
-            console.log('hi');
+            
             //get document data and then map it to the servicetags 
             // replace galio for datirium just for the testing
             serviceTags = Object.values(await this.fireService.FindWorkflowByURL(tempURL))
@@ -65,24 +66,29 @@ export class CwlService {
             }
         }
         // Json Object
-        const sdMetaData = [];
-        //get metadata from the file
+        let sdMetaData = [];
+        // get metadata from the file
         const metadataToParse = newJSON['sd:metadata'] ? newJSON['sd:metadata'] : [];
+        //staticly search for metadata from metadata interface
         for (const link of metadataToParse) {
-            //create the correct path to metadata directory
-            const updatedLink = resolve('/', pathRoot, link).slice(1);
-            //get json and text from metadata file
-            const { json, text } = await getWorkflowJSON(octoKit, owner, repo, updatedLink);
-            sdMetaData.push(json);
+            //get the name as we created in the static array
+            const metadataName =  link.split('/').slice(-1)[0].replace('-','_').split('.')[0];
+            console.log(metadataName);
+            //get json from metadata object
+            const Arrjson = metadata.filter(obj => Object.keys(obj).includes(metadataName));
+            
+            sdMetaData = [...sdMetaData, ...Arrjson];
         }
         //get upstreams object
         let upstreams = newJSON['sd:upstream'];
+        let final_id = []
+        if(!!upstreams){
         //create an array contain full url for the workflow upstream
         upstreams = [].concat(...Object.keys(upstreams)
             .map(key => upstreams[key]))
             .map(value => value.includes('http') ? value : 'https://github.com/datirium/workflows/workflows/' + value);
-
-        let final_id = []
+        
+        
         for (const stream of upstreams) {
             //create an array of ides based on the workflow url
 
@@ -90,7 +96,7 @@ export class CwlService {
             final_id = [...final_id, ...Object.keys(await this.fireService.FindWorkflowByURL(stream))];
         }
 
-
+    }
 
         let updatedCWL: Cwl = {
             description: {
@@ -118,7 +124,7 @@ export class CwlService {
         updatedCWL.description.message = webHookBody.pull_request.title// webHookBody.head_commit.message;
         let expanded: any;
         try {
-            expanded = await expandEmbedded(newJSON, webHookBody.repository.html_url, pathRoot, owner, repo, octoKit);
+            expanded = await expandEmbedded(newJSON, webHookBody.repository.html_url, pathRoot, owner, repo, octoKit, toolcache);
         } catch (err) {
             Log.error('Error expanding: ');
             return;

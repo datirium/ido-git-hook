@@ -124,52 +124,52 @@ export const saveChange = (
     };
 };
 
-    /**
-     * Remove the metadata from the cwl before packing
-     * @param dataObj CWL
-     * @param excludeKeysGlobal Wich keys to exclude
-     */
-    
+/**
+ * Remove the metadata from the cwl before packing
+ * @param dataObj CWL
+ * @param excludeKeysGlobal Wich keys to exclude
+ */
+
 export const _removeMetadata = (dataObj, excludeKeysGlobal = ['$namespaces', '$schemas', 'doc']) => {
-        const excludeKeysSchemas = [];
-        if (
-            dataObj['$namespaces'] &&
-            !Array.isArray(dataObj['$namespaces']) &&
-            Object.keys(dataObj['$namespaces']).length > 0
-        ) {
-            Object.keys(dataObj['$namespaces']).forEach((namespace) => {
-                if (!excludeKeysSchemas.includes(namespace + ':'))
-                    excludeKeysSchemas.push(namespace + ':');
-            });
+    const excludeKeysSchemas = [];
+    if (
+        dataObj['$namespaces'] &&
+        !Array.isArray(dataObj['$namespaces']) &&
+        Object.keys(dataObj['$namespaces']).length > 0
+    ) {
+        Object.keys(dataObj['$namespaces']).forEach((namespace) => {
+            if (!excludeKeysSchemas.includes(namespace + ':'))
+                excludeKeysSchemas.push(namespace + ':');
+        });
+    }
+
+    const removeMetadataR = (dataObj, excludeKeysG, excludeKeysL) => {
+        if (typeof dataObj !== 'object' || !dataObj) {
+            return;
         }
 
-        const removeMetadataR = (dataObj, excludeKeysG, excludeKeysL) => {
-            if (typeof dataObj !== 'object' || !dataObj) {
-                return;
-            }
-
-            if (Array.isArray(dataObj)) {
-                dataObj.forEach((item) => removeMetadataR(item, excludeKeysG, excludeKeysL));
-            } else {
-                Object.keys(dataObj).forEach((key) => {
-                    excludeKeysL.forEach((itemPrefixToExclude) => {
-                        if (key.startsWith(itemPrefixToExclude)) {
-                            delete dataObj[key];
-                        }
-                    });
-                    excludeKeysG.forEach((itemPrefixToExclude) => {
-                        if (key === itemPrefixToExclude) {
-                            delete dataObj[key];
-                        }
-                    });
-                    if (dataObj[key]) {
-                        removeMetadataR(dataObj[key], excludeKeysG, excludeKeysL);
+        if (Array.isArray(dataObj)) {
+            dataObj.forEach((item) => removeMetadataR(item, excludeKeysG, excludeKeysL));
+        } else {
+            Object.keys(dataObj).forEach((key) => {
+                excludeKeysL.forEach((itemPrefixToExclude) => {
+                    if (key.startsWith(itemPrefixToExclude)) {
+                        delete dataObj[key];
                     }
                 });
-            }
-        };
-        removeMetadataR(dataObj, excludeKeysGlobal, excludeKeysSchemas);
-    }
+                excludeKeysG.forEach((itemPrefixToExclude) => {
+                    if (key === itemPrefixToExclude) {
+                        delete dataObj[key];
+                    }
+                });
+                if (dataObj[key]) {
+                    removeMetadataR(dataObj[key], excludeKeysG, excludeKeysL);
+                }
+            });
+        }
+    };
+    removeMetadataR(dataObj, excludeKeysGlobal, excludeKeysSchemas);
+}
 
 /**
  * Make sure a potential relative path includes a full path
@@ -196,9 +196,10 @@ export const expandEmbedded = async (
     owner: string,
     repo: string,
     octoKit: Octokit,
+    toolcache: any
     // toolService: ToolService,
 ): Promise<any> => {
-    const helper = async (currObj: any, currPath: string) => {
+    const helper = async (currObj: any, currPath: string, toolCache: any) => {
         // null is an object so we need to check for it specifically here
         if (typeof currObj !== 'object' || currObj === null) {
             return currObj;
@@ -207,7 +208,7 @@ export const expandEmbedded = async (
         if (Array.isArray(currObj)) {
             const updated: any[] = [];
             for (const item of currObj) {
-                const updatedItem = await helper(item, currPath);
+                const updatedItem = await helper(item, currPath, toolCache);
                 updated.push(updatedItem);
             }
             return updated;
@@ -229,7 +230,7 @@ export const expandEmbedded = async (
                     (key !== 'run' && !currObj[key]['$import']) ||
                     (key === 'run' && typeof currObj[key] !== 'string' && !currObj[key]['$import'])
                 ) {
-                    updated[key] = await helper(currObj[key], currPath);
+                    updated[key] = await helper(currObj[key], currPath, toolCache);
                     continue;
                 }
                 if (!!currObj[key]['$import'] && typeof currObj[key]['$import'] !== 'string') {
@@ -243,45 +244,50 @@ export const expandEmbedded = async (
                 } else if (key === 'run') {
                     _path = currObj[key].split('/').slice(-2).join('/');
                 }
-                
+
                 // if (false) {
                 if (_path.includes('tools')) {
                     const newPath = resolve('/', currPath, dirname(_path));
                     const toolPath = getFullPath(_path, html_url);
                     //getting the tool from github
-                    const {json,text,sha} = await getWorkflowJSON(octoKit,owner,repo,_path);
-                    // // const tool = {};
-                    if (!json) {
-                        Log.info(`No Tool found in Collection for ${toolPath}`);
-                    } else {
-                        
-                        updated[key] = await helper(json, newPath);
-                        continue;
+                    if (toolPath in toolCache) {
+                        updated[key] = await helper(toolCache[toolPath], newPath, toolCache);
+                    }
+                    else {
+                        const { json, text, sha } = await getWorkflowJSON(octoKit, owner, repo, _path);
+                        // // const tool = {};
+                        if (!json) {
+                            Log.info(`No Tool found in Collection for ${toolPath}`);
+                        } else {
+                            toolCache[toolPath] = json;
+                            updated[key] = await helper(json, newPath,toolCache);
+                            continue;
+                        }
                     }
                 }
                 let absPath: string;
-                try {
-                    absPath = resolve('/', currPath, _path);
-                    const file = (await octoKit.request(
-                        'GET /repos/{owner}/{repo}/contents/{path}',
-                        {
-                            owner,
-                            repo,
-                            path: absPath,
-                        },
-                    )) as any;
-                    const content = Buffer.from(file.data.content, 'base64').toString();
-                    const json: any = safeLoad(content);
-                    const result = await helper(json, currPath);
-                    updated[key] = result;
-                } catch (err) {
-                    Log.error('Error finding: ', absPath);
-                    Log.error(err.message);
-                }
+                // try {
+                //     absPath = resolve('/', currPath, _path);
+                //     const file = (await octoKit.request(
+                //         'GET /repos/{owner}/{repo}/contents/{path}',
+                //         {
+                //             owner,
+                //             repo,
+                //             path: absPath,
+                //         },
+                //     )) as any;
+                //     const content = Buffer.from(file.data.content, 'base64').toString();
+                //     const json: any = safeLoad(content);
+                //     const result = await helper(json, currPath);
+                //     updated[key] = result;
+                // } catch (err) {
+                //     Log.error('Error finding: ', absPath);
+                //     Log.error(err.message);
+                // }
             }
             return updated;
         }
     };
-    const results = await helper(dataObj, pathRoot);
+    const results = await helper(dataObj, pathRoot,toolcache);
     return results;
 };
